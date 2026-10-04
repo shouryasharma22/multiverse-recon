@@ -1,62 +1,70 @@
 # Silicon Maze: Multiverse Recon
 
-A complete, browser-based TVA field-recon game. Identify five real-world landmark anomalies, place a map guess for each, and earn a final TVA rank from your accuracy.
+**Live Demo:** [https://multiverse-recon.onrender.com/](https://multiverse-recon.onrender.com/)
 
-## Run locally
+**Multiverse Recon** is a responsive, web-based geospatial location-guessing game inspired by *Avengers: Doomsday* and the Time Variance Authority (TVA). Players act as TVA field agents dropped into random location anomalies across the globe and must stabilize the timeline by pinpointing their exact coordinates on an interactive world map before time runs out.
 
-No build tools, package installs, or API keys are required. Open `index.html` in a current browser, or serve the folder with any static web server for the most consistent map and browser-storage behavior. For example:
+---
 
-```sh
-python3 -m http.server 8000
-```
+## Tech Stack
 
-Then visit <http://localhost:8000>. The page loads Tailwind CSS, Leaflet, map tiles, fonts, and landmark photographs from their respective CDNs, so an internet connection is needed for those assets. Gameplay and the local leaderboard work in the browser without a backend.
+- **Structure & Logic:** HTML5, Vanilla JavaScript (ES6+)
+- **Styling & Theme:** Tailwind CSS (via CDN), Custom CSS Glassmorphism, Google Fonts (`Montserrat` & `Inter`)
+- **Interactive Mapping:** Leaflet.js (`v1.9.4`) + OpenStreetMap Tiles
+- **Geospatial Math:** Custom Great-Circle Haversine Formula implementation
+- **Persistence & Shared Leaderboard:** Browser `localStorage` + `KVdb.io` REST API integration for cross-player score syncing
+- **Deployment:** Render
 
-## Stack and structure
+---
 
-- `index.html`: responsive TVA-inspired terminal, onboarding and difficulty selector, gameplay layout, results layout, and CDN dependencies.
-- `app.js`: landmark data, random round selection, Leaflet maps, countdowns, scoring, streaks, result reporting, and leaderboard persistence.
-- Tailwind CSS via its CDN plus a small set of custom CSS variables and responsive styles; no compilation step.
-- Leaflet.js via CDN with OpenStreetMap tiles; no map key is needed.
-- Wikimedia Commons `upload.wikimedia.org` image assets; no image key is needed.
+## Task & Rubric Implementation Breakdown
 
-## Gameplay and rubric coverage
+### Task 1: The Observation Deck (UI & Map Setup)
+- **Subtask 1.1 – Location Viewer:**
+  - Full-viewport, responsive anomaly viewer with dynamic aspect-ratio fitting (`object-cover` / `object-contain`), ambient backdrop blur, and graceful fallback states.
+  - Styled with a modern GeoGuessr-inspired glassmorphic HUD combined with *Avengers: Doomsday* / TVA cosmic-amber visual theming.
+  - **Interactive Spotlight Tour:** Features a 6-step interactive walkthrough on first launch with dynamic element spotlighting, keyboard navigation (`ArrowLeft`, `ArrowRight`, `Escape`), and a **Skip Tour** option that remembers the user's preference via `localStorage`. Can be re-triggered anytime via the `?` Help button in the HUD.
+- **Subtask 1.2 – Interactive Nexus Map:**
+  - Powered by **Leaflet.js** and OpenStreetMap.
+  - Features a hover-expandable (and pin-able) mini-map dock on desktop and a slide-up drawer on mobile/touch devices, complete with continuous `invalidateSize()` frame syncing.
+  - Players can click/tap anywhere on the globe to drop and freely reposition their custom SVG guess marker prior to locking in their coordinates.
 
-- A first-load tour explains image reconnaissance, map placement, and the five-round operation. Easy, Medium, and Hard protocols can be selected before starting.
-- Each session shuffles 12 iconic landmarks and selects five unique targets. The dataset covers North America, South America, Europe, Africa, Asia, and Oceania: Eiffel Tower, Taj Mahal, Statue of Liberty, Sydney Opera House, Colosseum, Christ the Redeemer, Machu Picchu, Great Wall of China, Mount Fuji, Pyramids of Giza, Big Ben, and Burj Khalifa.
-- The location viewer shows the current Wikimedia Commons photograph. Easy mode offers one textual hint per round. Hard mode magnifies the evidence feed to 150%.
-- The interactive Leaflet map accepts a single movable player marker. A guess enables the timeline submission control.
-- Each submitted round reveals the actual marker, draws an amber dashed guess-to-target line, fits the map to the result, and reports the distance and points before the next anomaly.
-- Round five opens a final report with all round outcomes, TVA rank, and a results map showing all guessed and actual locations and their connection lines. The map is explicitly invalidated after display to ensure it renders at its final size.
-- Play Again returns to the briefing with the chosen protocol preselected and starts a fresh set of five distinct anomalies.
+### Task 2: Timeline Stabilization (Core Logic)
+- **Subtask 2.1 – Anomaly Generation:**
+  - Curated dataset of 12 iconic global landmarks across 6 continents with exact latitude/longitude coordinates, high-resolution Wikimedia Commons imagery, and contextual hints.
+  - Uses a Fisher-Yates shuffle (`shuffledCopy`) at the start of each game session to select 5 unique, non-repeating anomalies per run.
+- **Subtask 2.2 – Convergence Calculation:**
+  - Implements the **Haversine Formula** (`haversineDistanceKm`) using Earth's mean radius ($R = 6371\text{ km}$) to compute the exact great-circle distance between the player's marker and the actual anomaly coordinates:
+    $$a = \sin^2\left(\frac{\Delta\phi}{2}\right) + \cos(\phi_1)\cdot\cos(\phi_2)\cdot\sin^2\left(\frac{\Delta\lambda}{2}\right)$$
+    $$d = 2R \cdot \arcsin\left(\min(1, \sqrt{a})\right)$$
 
-## Distance and scoring
+### Task 3: The TVA Assessment (Scoring & Progression)
+- **Subtask 3.1 – Scoring System:**
+  - **Maximum Threshold:** `5,000 points` per round (awarded for pinpoint guesses within $\le 5\text{ km}$).
+  - **Zero-Point Cutoff:** `0 points` for guesses $\ge 8,000\text{ km}$ away (or when the timer expires).
+  - **Decay Curve:** Smooth quadratic distance decay for intermediate guesses:
+    $$\text{Points} = \text{round}\left(5000 \times \left(\frac{8000 - d}{8000 - 5}\right)^2\right)$$
+- **Subtask 3.2 – Multi-Round Gameplay & Results:**
+  - **5-Round Game Loop:** Tracks round progression (`1 / 5` to `5 / 5`), cumulative score, and active streaks in the top-right HUD.
+  - **Post-Round Assessment:** Reveals the true location pin, draws a dashed amber trajectory polyline between the player's guess and the actual target, auto-fits the map bounds, and animates the points earned. Supports `Spacebar` hotkeys for rapid guessing and round progression.
+  - **Final Results Screen:** Displays final score out of `25,000`, assigns a TVA Agent Rank (*Temporal Director*, *Senior Hunter*, *Field Agent*, etc.), presents a 5-round breakdown table, renders a master summary map containing all 5 guess-to-actual polylines simultaneously, and provides a **Play Again** button.
 
-The great-circle distance uses the Haversine formula, with Earth’s mean radius set to $R = 6371$ km. Given coordinates $(\phi_1, \lambda_1)$ and $(\phi_2, \lambda_2)$ in radians:
+### Task 4: Multiversal Anomalies (Bonus Features Implemented)
+- **Time Dilation (Countdown Timers):** Circular SVG progress ring + digital countdown timer in the top HUD. Pulses red during the final 10 seconds and auto-submits the round if time expires.
+- **Nexus Streaks:** Consecutive guesses within `1,000 km` increment the player's Nexus Streak counter (`1x`, `2x`, etc.) and illuminate the HUD lightning badge.
+- **Difficulty Levels:**
+  - **Easy:** `60s` timer + **Reveal Hint** button unlocked (`1 clue` per round).
+  - **Medium:** `30s` timer, no hints.
+  - **Hard:** `15s` timer, no hints, and applies a `1.5x` magnification zoom (`hard-zoom`) on the anomaly image to restrict visual context.
+- **Shared & Local Leaderboards:** Players can log their Agent Name on the final screen. Scores persist locally and support optional cross-device public syncing via a shared **KVdb.io** bucket ID.
 
-$$
-a = \sin^2\left(\frac{\phi_2-\phi_1}{2}\right) + \cos(\phi_1)\cos(\phi_2)\sin^2\left(\frac{\lambda_2-\lambda_1}{2}\right)
-$$
+---
 
-$$
-d = 2R\arcsin(\sqrt{a})
-$$
+## Project Structure
 
-Distance is measured in kilometres. A guess within 5 km earns the full 5,000 base points, and a distance of 8,000 km or more earns zero. Between those bounds, a quadratic decay curve is used:
-
-$$
-P_{base} = 5000\left(\frac{8000-d}{8000-5}\right)^2
-$$
-
-A guess within 1,000 km advances the Nexus streak. Its round score is multiplied by $1 + 0.1s$, where $s$ is the updated streak length, and capped at 5,000 points per round. Missing a guess or exceeding the 1,000 km streak radius resets the streak. A timeout auto-submits for zero points and resets the streak. Time limits are 60 seconds for Easy, 30 for Medium, and 15 for Hard.
-
-## Leaderboard
-
-The final report includes a top-ten leaderboard seeded with sample TVA agent scores. Results are always stored in `localStorage` for same-browser persistence. For cross-device sharing, create a public KVdb bucket and enter its bucket ID in the leaderboard’s optional connection field; the app reads and writes the `leaderboard` key through KVdb’s REST API. A bucket ID is not an API key, but a public bucket allows anyone who knows its ID to alter its contents, so scores must be treated as untrusted. KVdb’s free buckets expire keys after a period of inactivity. Remote sync is best-effort, and local storage remains the fallback when no bucket is configured, the service is unavailable, or the browser blocks storage.
-
-## External services and attribution
-
-- Map display and geocoding tiles: OpenStreetMap contributors, attributed in the map controls.
-- Landmark photographs: Wikimedia Commons, loaded directly from `upload.wikimedia.org`.
-- Optional public leaderboard sync: JSONBlob REST API.
-- Tailwind CSS, Leaflet, and Google Fonts are loaded from public CDNs.
+```text
+├── index.html        # Application markup, Tailwind config, custom styles, and HUD overlays
+├── app.js            # Core game loop, Haversine math, Leaflet controllers, tour, and leaderboard
+├── public/
+│   └── logo.png      # Multiverse / Doctor Doom ambient background artwork
+└── README.md         # Project documentation
