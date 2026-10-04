@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#1a162b">
+    <meta name="description" content="A TVA field-recon game across unstable timelines. Identify real-world anomalies before the branch destabilizes.">
+    <title>Silicon Maze: Multiverse Recon</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              cosmic: { 900: '#1a162b', 800: '#261f42' },
+              emerald: { 500: '#22c55e' },
+              amber: { 500: '#f59e0b' },
+              lavender: { 400: '#a39bbb' }
+            },
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+              display: ['Montserrat', 'sans-serif']
+            }
+          }
+        }
+      };
+    </script>
+    <link rel="preconnect" href="https://unpkg.com">
+    <link rel="preconnect" href="https://tile.openstreetmap.org">
+    <link rel="preconnect" href="https://upload.wikimedia.org">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:ital,wght@0,700;0,800;0,900;1,800;1,900&display=swap" rel="stylesheet">
+    <style>
+      :root {
+        color-scheme: dark;
+        --cosmic-900: #1a162b;
+        --cosmic-800: #261f42;
+        --emerald: #22c55e;
+        --amber: #f59e0b;
+        --white: #ffffff;
+        --muted: #a39bbb;
+        --map-expanded-width: min(45vw, 640px);
+        --map-expanded-height: min(50vh, 460px);
+      }
+      * { box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+      body { background: var(--cosmic-900); color: var(--white); font-family: 'Inter', sans-serif; }
+      body::before {
+        content: '';
+        position: fixed;
+        inset: 0;
+        z-index: 0;
+        background: url('public/logo.png') center / cover no-repeat, url('/logo.png') center / cover no-repeat;
+        opacity: 1;
+        pointer-events: none;
+      }
+      button, input { font: inherit; }
+      button:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid var(--white); outline-offset: 3px; box-shadow: 0 0 0 5px rgba(34,197,94,.45); }
+      .hidden { display: none !important; }
+      .glass { border: 1px solid rgba(255,255,255,.1); background: rgba(26,22,43,.85); backdrop-filter: blur(14px); box-shadow: 0 18px 48px rgba(0,0,0,.4); }
+      .display-font { font-family: 'Montserrat', sans-serif; font-weight: 900; font-style: italic; }
+      .metric-font { font-family: 'Inter', sans-serif; font-variant-numeric: tabular-nums; }
+      body:has(#tour-overlay:not(.hidden)) #play-screen { display: none !important; }
+      #play-screen { isolation: isolate; z-index: 10; }
+      #location-backdrop { opacity: 0.25; }
+      #location-image { opacity: 1; transition: transform 500ms cubic-bezier(.2,.7,.2,1); }
+      #location-image.hard-zoom { transform: scale(1.5); }
+      #image-fallback { background: radial-gradient(ellipse at 52% 43%, rgba(54,44,85,.7) 0, rgba(26,22,43,.7) 56%, rgba(16,13,26,.7) 100%); }
+      .vignette { background: linear-gradient(180deg, rgba(0,0,0,.06), transparent 52%, rgba(0,0,0,.54)); }
+      #map-dock { --map-expanded-width: min(45vw, 640px); --map-expanded-height: min(50vh, 460px); isolation: isolate; transition: width 300ms ease-out, height 300ms ease-out, inset 300ms ease-out; }
+      #map-frame { width: 18rem; height: 13rem; overflow: hidden; transition: width 300ms ease-out, height 300ms ease-out, opacity 300ms ease-out, border-radius 300ms ease-out, transform 300ms ease-out; }
+      #map-dock.is-expanded:not(.is-result) #map-frame { width: var(--map-expanded-width); height: var(--map-expanded-height); opacity: 1; }
+      #map-frame:not(.is-expanded) .leaflet-control-zoom { display: none; }
+      #guess-map { position: absolute; inset: 0; width: 100%; height: 100%; background: #29243a; }
+      .leaflet-container { font-family: 'Inter', sans-serif; }
+      .leaflet-control-attribution { font-size: 8px !important; opacity: .8; }
+      .leaflet-popup-content-wrapper, .leaflet-popup-tip { border: 0; border-radius: 12px; background: #261f42; color: #fff; box-shadow: 0 12px 30px rgba(0,0,0,.4); }
+      .leaflet-popup-content { font: 500 12px/1.5 'Inter', sans-serif; }
+      .leaflet-popup-close-button { color: #fff !important; }
+      .guess-pin-icon, .actual-pin-icon { border: 0; background: transparent; }
+      .guess-pin-icon svg, .actual-pin-icon svg { overflow: visible; filter: drop-shadow(0 4px 7px rgba(0,0,0,.55)); }
+      .result-drawer { animation: drawer-in 360ms cubic-bezier(.2,.75,.2,1) both; }
+      @keyframes drawer-in { from { opacity: 0; transform: translate(-50%, 18px); } to { opacity: 1; transform: translate(-50%, 0); } }
+      .overlay { position: fixed; inset: 0; z-index: 50; overflow-y: auto; background: rgba(14,11,26,.62); backdrop-filter: blur(6px); }
+      .overlay-card { background: radial-gradient(ellipse at 50% 0, rgba(103,75,161,.18), transparent 55%), rgba(26,22,43,.94); }
+      #walkthrough-root.is-centered { background: rgba(14,11,26,.78); }
+      #walkthrough-spotlight { border: 2px solid var(--amber); box-shadow: 0 0 0 9999px rgba(14,11,26,.78); pointer-events: none; transition: top 180ms ease, left 180ms ease, width 180ms ease, height 180ms ease; }
+      #walkthrough-card { position: absolute; width: min(22rem, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); overflow-y: auto; }
+      .walkthrough-dot { width: 6px; height: 6px; border-radius: 999px; background: rgba(255,255,255,.28); }
+      .walkthrough-dot.is-active { width: 18px; background: var(--emerald); }
+      .difficulty-option input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+      .difficulty-option input:checked + .difficulty-tile { border-color: rgba(34,197,94,.8); background: linear-gradient(145deg, rgba(34,197,94,.24), rgba(103,75,161,.36)); color: #fff; }
+      .difficulty-option input:focus-visible + .difficulty-tile { outline: 2px solid #fff; outline-offset: 3px; }
+      .leader-row { display: grid; grid-template-columns: 26px 1fr auto; gap: 10px; align-items: center; border-bottom: 1px solid rgba(255,255,255,.08); padding: 8px 2px; color: #e9e5f2; font-size: 12px; }
+      .leader-row:first-child .leader-rank, .leader-row:first-child strong { color: var(--amber); }
+      #results-map { width: 100%; height: 320px; }
+      #map-toggle { display: none; }
+      @media (max-width: 767px), (hover: none) {
+        #map-dock { right: 1rem; bottom: calc(1rem + env(safe-area-inset-bottom)); left: 1rem; width: auto; }
+        #map-frame { position: fixed; z-index: 1; right: 0; bottom: calc(4.5rem + env(safe-area-inset-bottom)); left: 0; width: 100vw; height: 60dvh; border-radius: 24px 24px 0 0; opacity: 1; transform: translateY(110%); visibility: hidden; }
+        #map-dock.is-expanded:not(.is-result) #map-frame { width: 100vw; height: 60dvh; transform: translateY(0); visibility: visible; }
+        #map-dock:not(.is-result) #submit-guess { position: relative; z-index: 2; }
+        #map-toggle { position: absolute; right: .25rem; bottom: calc(4.5rem + env(safe-area-inset-bottom)); z-index: 31; display: grid; width: 44px; height: 44px; place-items: center; }
+        #map-dock.is-expanded:not(.is-result) ~ #map-toggle { bottom: calc(4.5rem + env(safe-area-inset-bottom)); }
+        #results-map { height: 320px; }
+        #round-report { bottom: calc(5.25rem + env(safe-area-inset-bottom)); padding: 1rem; }
+      }
+      #map-dock.is-result { position: fixed; inset: 0; z-index: 30; width: 100vw; height: 100dvh; border-radius: 0; opacity: 1; }
+      #map-dock.is-result #map-frame { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 0; opacity: 1; transform: none; visibility: visible; }
+      #map-dock.is-result #map-pin-toggle, #map-dock.is-result #submit-guess { visibility: hidden; pointer-events: none; }
+      #map-dock.is-result .leaflet-control-zoom { display: block !important; }
+      #map-dock.is-result ~ #map-toggle { visibility: hidden; }
+      @media (min-width: 1024px) { #results-map { height: 420px; } }
+      @media (max-width: 767px) {
+        .hud-icon-button, #map-pin-toggle { position: relative; }
+        .hud-icon-button::before { content: ''; position: absolute; inset: -10px; }
+        #map-pin-toggle::before { content: ''; position: absolute; inset: -4px; }
+      }
+      @media (max-width: 639px) {
+        .hud-label { font-size: 9px; }
+        .hud-number { font-size: 14px; }
+        #hud-brand-pill { top: 8px; left: 8px; gap: 4px; padding: 5px 7px; }
+        #brand-mark { width: 24px; height: 24px; }
+        #brand-name { display: none; }
+        .hud-icon-button { width: 24px; height: 24px; }
+        #hud-timer-pill { top: 54px; gap: 5px; padding: 5px 8px; }
+        #hud-stats-card { top: 98px; right: 8px; padding: 6px 7px; }
+        #hud-stats-card .stat-cell { min-width: 29px; }
+        #result-points { font-size: 1.875rem; }
+      }
+      @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } #walkthrough-spotlight { transition: none !important; } }
+    </style>
+  </head>
+  <body>
+    <main id="play-screen" class="absolute inset-0 overflow-hidden" aria-label="Multiverse Recon game">
+      <h1 class="sr-only">Multiverse Recon</h1>
+      <img id="location-backdrop" class="absolute inset-0 z-0 h-full w-full object-cover scale-110 blur-2xl brightness-50 saturate-125 pointer-events-none select-none" src="https://upload.wikimedia.org/wikipedia/commons/a/a8/Tour_Eiffel_Wikimedia_Commons.jpg" alt="" aria-hidden="true" decoding="async" referrerpolicy="no-referrer">
+      <img id="location-image" class="absolute inset-0 z-0 h-full w-full" src="https://upload.wikimedia.org/wikipedia/commons/a/a8/Tour_Eiffel_Wikimedia_Commons.jpg" alt="Mystery location photograph" draggable="false" decoding="async" referrerpolicy="no-referrer">
+      <div id="image-fallback" class="absolute inset-0 z-0 grid place-items-center text-center hidden" aria-live="polite">
+        <div class="flex flex-col items-center gap-3 text-lavender-400">
+          <svg aria-hidden="true" class="h-9 w-9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="8.5" cy="9" r="1.5"/><path d="m21 15-5-5L5 20"/></svg>
+          <span>Image unavailable</span>
+        </div>
+      </div>
+      <div class="vignette pointer-events-none absolute inset-0 z-[1]"></div>
+
+      <div id="hud-brand-pill" class="glass absolute left-3 top-3 z-10 flex items-center gap-2 rounded-full px-3 py-2 sm:left-4 sm:top-4">
+        <button id="home-button" class="flex items-center gap-2 border-0 bg-transparent p-0 text-white" type="button" aria-label="Go to home">
+          <span id="brand-mark" class="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-emerald-500/15 text-emerald-400" aria-hidden="true">
+            <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 2 8.5 5v10L12 22l-8.5-5V7L12 2Z"/><path d="m8 12 2.5 2.5L16.5 8"/></svg>
+          </span>
+          <span id="brand-name" class="display-font whitespace-nowrap text-xs tracking-wider">MULTIVERSE RECON</span>
+        </button>
+        <button id="hint-button" class="hud-icon-button grid h-8 w-8 place-items-center rounded-full bg-white/10 text-amber-400 transition hover:bg-white/20 disabled:opacity-40 hidden" type="button" aria-label="Reveal hint" title="Reveal hint" disabled>
+          <svg aria-hidden="true" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 18h6M10 22h4M8.2 14.5A6 6 0 1 1 15.8 14.5C14.7 15.4 14 16 14 18h-4c0-2-.7-2.6-1.8-3.5Z"/></svg>
+        </button>
+        <button id="tour-button" class="hud-icon-button grid h-8 w-8 place-items-center rounded-full bg-white/10 text-white transition hover:bg-white/20" type="button" aria-label="Help" title="Help">
+          <svg aria-hidden="true" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M9.6 9a2.5 2.5 0 1 1 4.7 1.2c-.8 1.1-2.3 1.2-2.3 3M12 17h.01"/></svg>
+        </button>
+      </div>
+      <div id="hint-box" class="glass absolute left-4 top-16 z-20 max-w-xs rounded-2xl px-4 py-3 text-sm text-white hidden" role="status"></div>
+
+      <div id="hud-timer-pill" class="glass metric-font absolute left-1/2 top-3 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full px-3 py-2 sm:top-4 sm:px-4" aria-label="Time remaining">
+        <svg class="h-8 w-8 -rotate-90" viewBox="0 0 36 36" aria-hidden="true">
+          <circle cx="18" cy="18" r="14" fill="none" stroke="rgba(255,255,255,.18)" stroke-width="3"/>
+          <circle id="hud-timer-ring" cx="18" cy="18" r="14" fill="none" stroke="#f59e0b" stroke-width="3" stroke-linecap="round" stroke-dasharray="87.96" stroke-dashoffset="0"/>
+        </svg>
+        <span id="hud-timer" class="text-base font-bold tabular-nums text-amber-500 sm:text-lg">--:--</span>
+      </div>
+
+      <aside id="hud-stats-card" class="absolute right-3 top-3 z-10 rounded-xl bg-gradient-to-r from-[#261f42] to-[#1a162b] p-[1px] shadow-xl shadow-black/40 sm:right-4 sm:top-4" aria-label="Game score">
+        <div class="-skew-x-6 rounded-xl bg-gradient-to-r from-[#261f42] to-[#1a162b] px-3 py-2.5 sm:px-4">
+          <div class="flex skew-x-6 items-center gap-3 sm:gap-5">
+            <div class="stat-cell min-w-[34px] text-center"><div class="hud-label text-[10px] uppercase tracking-wider text-lavender-400">ROUND</div><div id="hud-round" class="hud-number metric-font mt-0.5 text-base font-bold tabular-nums">-- / 05</div></div>
+            <div class="stat-cell min-w-[38px] text-center"><div class="hud-label text-[10px] uppercase tracking-wider text-lavender-400">SCORE</div><div id="hud-score" class="hud-number metric-font mt-0.5 text-base font-bold tabular-nums text-amber-400">0</div></div>
+            <div class="stat-cell min-w-[36px] text-center"><div class="hud-label text-[10px] uppercase tracking-wider text-lavender-400">STREAK</div><div class="mt-0.5 flex items-center justify-center gap-1"><svg id="streak-bolt" class="h-3.5 w-3.5 text-amber-500/35" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M9.2 0 2.8 8h4l-.9 8L13.2 7h-4z"/></svg><span id="hud-streak" class="hud-number metric-font text-base font-bold tabular-nums">0x</span></div></div>
+          </div>
+          <span id="hud-mode" class="sr-only">EASY</span>
+        </div>
+        <div class="h-[2px] rounded-b-xl bg-gradient-to-r from-amber-500 via-amber-400 to-violet-500"></div>
+      </aside>
+
+      <span id="image-title" class="sr-only"></span>
+      <span id="image-caption" class="sr-only"></span>
+      <span id="image-code" class="sr-only"></span>
+      <span id="guess-coordinates" class="sr-only">NO FIX</span>
+      <span id="map-status-text" class="sr-only" aria-live="polite">Waiting for map fix</span>
+
+      <div id="map-dock" class="absolute bottom-6 right-6 z-30 flex flex-col items-stretch gap-3">
+        <div id="map-frame" class="relative rounded-2xl opacity-80 shadow-2xl shadow-black/50 ring-1 ring-white/15">
+          <div id="guess-map" class="absolute inset-0" aria-label="Interactive world map. Tap to place your pin."></div>
+          <button id="map-pin-toggle" class="glass absolute left-3 top-3 z-[1001] grid h-9 w-9 place-items-center rounded-full text-white" type="button" aria-label="Pin map open" aria-pressed="false" title="Pin map open">
+            <svg aria-hidden="true" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m16 3 5 5-4 1-4 4-1 6-2-2-2 4-2-2 4-2-2-2 6-1 4-4z"/></svg>
+          </button>
+        </div>
+        <button id="submit-guess" class="w-full rounded-full bg-slate-700/70 py-3 font-extrabold tracking-widest text-slate-300 uppercase shadow-lg transition-transform active:scale-95 cursor-not-allowed" type="button" disabled><span id="submit-guess-label">PLACE YOUR PIN ON THE MAP</span></button>
+      </div>
+      <button id="map-toggle" class="glass rounded-full text-white shadow-xl" type="button" aria-label="Open map" aria-expanded="false" title="Open map">
+        <svg aria-hidden="true" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3V6Z"/><path d="M9 3v15m6-12v15"/></svg>
+      </button>
+
+      <section id="round-report" class="result-drawer glass absolute bottom-8 left-1/2 z-40 w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 rounded-3xl p-5 hidden" aria-live="polite" aria-label="Round result">
+        <div id="result-points" class="display-font text-4xl italic text-amber-500">+0 PTS</div>
+        <div class="mt-3 h-2 overflow-hidden rounded-full bg-white/10"><div id="result-bar" class="h-full w-0 rounded-full bg-gradient-to-r from-amber-500 to-emerald-500 transition-[width] duration-700"></div></div>
+        <p id="result-sentence" class="mt-4 text-sm text-white"></p>
+        <button id="next-round" class="mt-5 rounded-full bg-emerald-500 px-7 py-3 font-extrabold tracking-widest text-white uppercase shadow-lg shadow-emerald-950/40 transition hover:bg-emerald-400 active:scale-95" type="button">NEXT ROUND</button>
+      </section>
+    </main>
+
+    <section id="results-screen" class="fixed inset-0 z-40 overflow-y-auto bg-gradient-to-br from-[#1a162b]/80 to-[#261f42]/80 p-4 sm:p-8 hidden" aria-label="Final results">
+      <div class="mx-auto max-w-6xl pb-[env(safe-area-inset-bottom)]">
+        <div class="mb-6 flex flex-wrap items-end justify-between gap-4">
+          <div class="flex items-center gap-3"><button id="results-home-button" class="glass flex items-center gap-2 rounded-full px-3 py-2 text-white" type="button" aria-label="Go to home"><span class="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-emerald-500/15 text-emerald-400" aria-hidden="true"><svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 2 8.5 5v10L12 22l-8.5-5V7L12 2Z"/><path d="m8 12 2.5 2.5L16.5 8"/></svg></span><span class="display-font whitespace-nowrap text-xs tracking-wider">MULTIVERSE RECON</span></button><div><h1 class="display-font text-3xl italic sm:text-4xl">RECON COMPLETE</h1><p id="rank-copy" class="mt-2 text-sm text-lavender-400"></p></div></div>
+          <div class="metric-font flex items-baseline gap-2"><span id="final-score" class="display-font text-4xl italic text-amber-500 sm:text-5xl">0</span><span class="text-sm text-lavender-400">/ 25,000</span></div>
+        </div>
+        <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
+          <section class="glass rounded-3xl p-4 sm:p-5">
+            <h2 class="mb-3 text-xs font-bold uppercase tracking-widest text-lavender-400">Your five rounds</h2>
+            <div class="overflow-x-auto"><table class="w-full border-collapse text-left text-xs"><thead class="text-[10px] uppercase tracking-wider text-lavender-400"><tr><th class="pb-2 pr-2 font-medium">Round</th><th class="pb-2 pr-2 font-medium">Location</th><th class="pb-2 pr-2 font-medium">Distance</th><th class="pb-2 text-right font-medium">Points</th></tr></thead><tbody id="round-table-body" class="divide-y divide-white/10"></tbody></table></div>
+            <div class="mt-5 border-t border-white/10 pt-4">
+              <div class="mb-2 flex items-center justify-between"><h2 class="text-xs font-bold uppercase tracking-widest text-lavender-400">Leaderboard</h2><span class="text-[10px] text-lavender-400">TOP 10</span></div>
+              <form id="leader-form" class="flex gap-2"><input id="agent-name" name="agentName" maxlength="24" autocomplete="nickname" placeholder="Your name" aria-label="Your name" required class="min-w-0 flex-1 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white placeholder:text-lavender-400"><button class="rounded-full bg-emerald-500 px-5 py-2 text-xs font-bold tracking-wider text-white hover:bg-emerald-400" type="submit">SUBMIT</button></form>
+              <details class="mt-3 text-xs text-lavender-400"><summary class="cursor-pointer select-none">Shared leaderboard (optional)</summary><form id="remote-form" class="mt-2 flex gap-2"><input id="remote-bucket" maxlength="40" autocomplete="off" placeholder="KVdb bucket ID" aria-label="Shared KVdb public bucket ID" class="min-w-0 flex-1 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs text-white placeholder:text-lavender-400"><button class="rounded-full border border-white/15 px-4 py-2 text-xs text-white" type="submit">CONNECT</button></form><p class="mt-2">Shared scores are public and editable by anyone with the bucket ID.</p></details>
+              <p id="leader-notice" class="mt-2 text-[10px] text-lavender-400" aria-live="polite">Scores persist locally.</p>
+              <div id="leaderboard-list" class="mt-2" aria-live="polite"></div>
+            </div>
+          </section>
+          <div class="flex flex-col gap-4">
+            <div id="results-map" class="glass min-h-[320px] overflow-hidden rounded-2xl lg:min-h-[420px]" aria-label="Map showing your five guesses and the actual locations"></div>
+            <button id="play-again" class="w-full rounded-full bg-emerald-500 px-7 py-4 font-extrabold tracking-widest text-white uppercase shadow-lg shadow-emerald-950/40 transition hover:bg-emerald-400 active:scale-95" type="button">PLAY AGAIN</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div id="tour-overlay" class="overlay z-50 flex items-center justify-center p-5" role="dialog" aria-modal="true" aria-labelledby="tour-title">
+      <div class="overlay-card glass w-full max-w-lg rounded-3xl p-6 sm:p-8">
+        <h2 id="tour-title" class="display-font text-2xl italic sm:text-3xl">MULTIVERSE RECON</h2>
+        <p class="mt-2 text-sm text-lavender-400">Guess where in the world it is.</p>
+        <div class="mt-6 grid grid-cols-3 gap-2 text-center text-[10px] font-semibold sm:gap-4 sm:text-xs">
+          <div class="flex flex-col items-center gap-2"><svg class="h-6 w-6 text-amber-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 6h18M3 12h18M3 18h18"/><circle cx="8" cy="6" r="2" fill="#1b1712"/><circle cx="15" cy="12" r="2" fill="#1b1712"/></svg><span>Study the photo</span></div>
+          <div class="flex flex-col items-center gap-2"><svg class="h-6 w-6 text-amber-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg><span>Pin the map</span></div>
+          <div class="flex flex-col items-center gap-2"><svg class="h-6 w-6 text-amber-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>Score up to 5,000</span></div>
+        </div>
+        <fieldset class="mt-7">
+          <legend class="sr-only">Choose difficulty</legend>
+          <div class="grid grid-cols-3 gap-2 rounded-full bg-black/20 p-1">
+            <label class="difficulty-option relative"><input type="radio" name="difficulty" value="easy" checked><span class="difficulty-tile block cursor-pointer rounded-full border border-transparent px-2 py-3 text-center"><span class="block text-xs font-bold">EASY</span><span class="mt-1 block text-[9px] text-lavender-400">60s + hints</span></span></label>
+            <label class="difficulty-option relative"><input type="radio" name="difficulty" value="medium"><span class="difficulty-tile block cursor-pointer rounded-full border border-transparent px-2 py-3 text-center"><span class="block text-xs font-bold">MEDIUM</span><span class="mt-1 block text-[9px] text-lavender-400">30s</span></span></label>
+            <label class="difficulty-option relative"><input type="radio" name="difficulty" value="hard"><span class="difficulty-tile block cursor-pointer rounded-full border border-transparent px-2 py-3 text-center"><span class="block text-xs font-bold">HARD</span><span class="mt-1 block text-[9px] text-lavender-400">15s + zoom</span></span></label>
+          </div>
+        </fieldset>
+        <button id="start-game" class="mt-6 w-full rounded-full bg-emerald-500 py-3.5 font-extrabold tracking-widest text-white shadow-lg shadow-emerald-950/40 transition hover:bg-emerald-400 active:scale-95" type="button">START GAME</button>
+      </div>
+    </div>
+
+    <div id="walkthrough-root" class="fixed inset-0 z-[60] hidden" aria-hidden="true">
+      <div id="walkthrough-spotlight" class="absolute hidden rounded-2xl border-2 border-amber-500" aria-hidden="true"></div>
+      <section id="walkthrough-card" class="glass absolute z-[61] rounded-3xl p-5" role="dialog" aria-modal="true" aria-labelledby="walkthrough-title" aria-describedby="walkthrough-text">
+        <div id="walkthrough-count" class="text-[10px] font-semibold uppercase tracking-widest text-lavender-400" aria-live="polite">1 of 6</div>
+        <h2 id="walkthrough-title" class="display-font mt-2 text-xl italic">Find the anomaly</h2>
+        <p id="walkthrough-text" class="mt-2 text-sm leading-6 text-lavender-400">Study the photo. Where in the world is this?</p>
+        <div id="walkthrough-dots" class="mt-4 flex items-center gap-1.5" aria-hidden="true"></div>
+        <div class="mt-5 flex flex-wrap items-center justify-between gap-2">
+          <button id="walkthrough-skip" class="min-h-11 rounded-full px-3 text-xs font-semibold text-lavender-400 hover:text-white" type="button">Skip tour</button>
+          <div class="ml-auto flex items-center gap-2">
+            <button id="walkthrough-back" class="min-h-11 rounded-full border border-white/15 px-4 text-xs font-semibold text-white hidden" type="button">Back</button>
+            <button id="walkthrough-next" class="min-h-11 rounded-full bg-emerald-500 px-5 text-xs font-bold tracking-wider text-white hover:bg-emerald-400" type="button">Next</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="app.js" defer></script>
+  </body>
+</html>
